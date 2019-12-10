@@ -1,0 +1,18 @@
+{application, helium_follower,
+ [{description, "An OTP application"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {helium_follower_app, []}},
+  {applications,
+   [kernel,
+    stdlib,
+    lager,
+    rocksdb
+   ]},
+  {included_applications, [blockchain]},
+  {env,[]},
+  {modules, []},
+
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.
