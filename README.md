@@ -7,10 +7,9 @@ This repo is permissively licensed, so you don't need to tell us what you're doi
 
 Basic instructions
 -----
-First, you'll need to have Erlang installed.  You can use a later 21.x series OTP, or OTP 22+.  Anything earlier is unlikely to work because of our use of persistent terms.  You'll also need rebar3 installed (see [here](https://www.rebar3.org/docs/getting-started) for help with both).  once you have them installed, you can type:
+First, you'll need to have Erlang installed.  You can use a later 21.x series OTP, or OTP 22+.  Anything earlier is unlikely to work because of our use of persistent terms.  You can also install rebar3 (see [here](https://www.rebar3.org/docs/getting-started) for help with both), however we've included one here along with a basic Makefile to get you started.  Once you have them installed, you can type:
 
-
-    $ rebar3 release
+    $ make release
     $ _build/default/rel/helium_follower/bin/helium_follower start
     $ tail -F _build/default/rel/helium_follower/log/console.log
 
