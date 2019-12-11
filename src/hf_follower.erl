@@ -48,6 +48,17 @@ handle_cast(_Msg, State) ->
 
 handle_info({blockchain_event, {add_block, Hash, _Sync, Ledger}},
             #state{chain = Chain} = State) ->
+
+    %%% START TODO
+
+    %% Here, you should add the whatever code you would like called at
+    %% each block sync.  The code before the END comment is very
+    %% basic, to give you an idea of the kind of thing that can be
+    %% done here.  For more advanced examples, please see the miner
+    %% repository.
+    %% e.g. https://github.com/helium/miner/blob/master/src/miner.erl#L497
+    %%      https://github.com/helium/miner/blob/master/src/miner_consensus_mgr.erl#L364
+
     {ok, Block} = blockchain:get_block(Hash, Chain),
     {ok, LedgerHeight} = blockchain_ledger_v1:current_height(Ledger),
     BlockHeight = blockchain_block:height(Block),
@@ -55,6 +66,9 @@ handle_info({blockchain_event, {add_block, Hash, _Sync, Ledger}},
 
     lager:info("added block ~p (ledger height ~p) with txns: ~p",
                [BlockHeight, LedgerHeight, Txns]),
+
+    %%% END TODO
+
     {noreply, State};
 handle_info(chain_check, _State) ->
     {ok, State1} = init([]),

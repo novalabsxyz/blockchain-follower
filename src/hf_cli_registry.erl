@@ -5,6 +5,7 @@
 -module(hf_cli_registry).
 
 -define(CLI_MODULES, [
+                      hf_cli_info,
                       hf_cli_genesis
                      ]).
 
