@@ -13,4 +13,4 @@ First, you'll need to have Erlang installed.  You can use a later 21.x series OT
     $ _build/default/rel/blockchain_follower/bin/blockchain_follower start
     $ tail -F _build/default/rel/blockchain_follower/log/console.log
 
-Within a few minutes, you should see the chain begin to sync.  After it has synced up to the assumed valid height, it will begin to apply all the blocks, and you'll see the code in `hf_follower.erl`'s `add_block` `handle_info` clause start to fire.  After the sync, it will continue to sync the chain until it's up to date with cluster gossip.  Every time it appends a block, it will fire that `handle_info` clause.
+Within a few minutes, you should see the chain begin to sync.  After it has synced up to the assumed valid height, it will begin to apply all the blocks, and you'll see the code in `bf_follower.erl`'s `add_block` `handle_info` clause start to fire.  After the sync, it will continue to sync the chain until it's up to date with cluster gossip.  Every time it appends a block, it will fire that `handle_info` clause.

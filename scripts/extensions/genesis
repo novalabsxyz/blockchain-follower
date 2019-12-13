@@ -2,5 +2,5 @@
 if [ -t 0 ] ; then
     export CLIQUE_COLUMNS=`stty size 2>/dev/null | cut -d ' ' -f 2`
 fi
-relx_nodetool rpc hf_console command genesis $@
+relx_nodetool rpc bf_console command genesis $@
 exit $?
