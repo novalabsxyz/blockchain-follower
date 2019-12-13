@@ -1,12 +1,12 @@
 %%%-------------------------------------------------------------------
-%% @doc hf_cli_registry
+%% @doc bf_cli_registry
 %% @end
 %%%-------------------------------------------------------------------
--module(hf_cli_registry).
+-module(bf_cli_registry).
 
 -define(CLI_MODULES, [
-                      hf_cli_info,
-                      hf_cli_genesis
+                      bf_cli_info,
+                      bf_cli_genesis
                      ]).
 
 -export([register_cli/0]).

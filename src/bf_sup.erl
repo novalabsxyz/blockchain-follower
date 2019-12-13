@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc helium-follower top level supervisor.
+%% @doc blockchain_follower top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(hf_sup).
+-module(bf_sup).
 
 -behaviour(supervisor).
 
@@ -47,7 +47,7 @@ init([]) ->
 
     BaseDir = application:get_env(blockchain, base_dir, "data"),
 
-    SwarmKey = filename:join([BaseDir, "helium_follower", "swarm_key"]),
+    SwarmKey = filename:join([BaseDir, "blockchain_follower", "swarm_key"]),
     ok = filelib:ensure_dir(SwarmKey),
     {PublicKey, ECDHFun, SigFun} =
         case libp2p_crypto:load_keys(SwarmKey) of
@@ -81,7 +81,7 @@ init([]) ->
 
     ChildSpecs = [
                   ?SUP(blockchain_sup, [BlockchainOpts]),
-                  ?WORKER(hf_follower, [])
+                  ?WORKER(bf_follower, [])
                  ],
     {ok, {SupFlags, ChildSpecs}}.
 

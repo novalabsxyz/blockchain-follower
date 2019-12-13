@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
-%% @doc miner_cli_genesis
+%% @doc bf_cli_genesis
 %% @end
 %%%-------------------------------------------------------------------
--module(hf_cli_genesis).
+-module(bf_cli_genesis).
 
 -behavior(clique_handler).
 
@@ -37,7 +37,7 @@ register_all_cmds() ->
 
 genesis_usage() ->
     [["genesis"],
-     ["miner genesis commands\n\n",
+     ["blockchain-follower genesis commands\n\n",
       "  genesis load <genesis_file>                                 - Load genesis block from file.\n"
      ]
     ].

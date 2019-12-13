@@ -1,8 +1,8 @@
 %%%-------------------------------------------------------------------
-%% @doc hf_cli_info
+%% @doc bf_cli_info
 %% @end
 %%%-------------------------------------------------------------------
--module(hf_cli_info).
+-module(bf_cli_info).
 
 -behavior(clique_handler).
 
@@ -21,10 +21,7 @@ register_all_usage() ->
                   [
                    info_usage(),
                    info_height_usage(),
-                   info_in_consensus_usage(),
-                   info_name_usage(),
-                   info_block_age_usage(),
-                   info_p2p_status_usage()
+                   info_name_usage()
                   ]).
 
 register_all_cmds() ->
@@ -34,10 +31,7 @@ register_all_cmds() ->
                   [
                    info_cmd(),
                    info_height_cmd(),
-                   info_in_consensus_cmd(),
-                   info_name_cmd(),
-                   info_block_age_cmd(),
-                   info_p2p_status_cmd()
+                   info_name_cmd()
                   ]).
 %%
 %% info
@@ -45,12 +39,12 @@ register_all_cmds() ->
 
 info_usage() ->
     [["info"],
-     ["hf info commands\n\n",
-      "  info height - Get height of the blockchain for this hf.\n",
-      "  info in_consensus - Show if this hf is in the consensus_group.\n"
-      "  name - Shows the name of this hf.\n"
+     ["blockchain_follower info commands\n\n",
+      "  info height - Get height of the blockchain for this blockchain_follower.\n",
+      "  info in_consensus - Show if this blockchain_follower is in the consensus_group.\n"
+      "  name - Shows the name of this blockchain_follower.\n"
       "  block_age - Get age of the latest block in the chain, in seconds.\n"
-      "  p2p_status - Shows key peer connectivity status of this hf.\n"
+      "  p2p_status - Shows key peer connectivity status of this blockchain_follower.\n"
      ]
     ].
 
@@ -72,7 +66,7 @@ info_height_cmd() ->
 info_height_usage() ->
     [["info", "height"],
      ["info height \n\n",
-      "  Get height of the blockchain for this hf.\n\n"
+      "  Get height of the blockchain for this blockchain_follower.\n\n"
       "  The first number is the current election epoch, and the second is\n"
       "  the block height.  If the second number is displayed with an asterisk (*)\n"
       "  this node has yet to sync past the assumed valid hash in the node config.\n\n"
@@ -102,27 +96,6 @@ info_height([_, _, _], [], []) ->
 
 
 %%
-%% info in_consensus
-%%
-
-info_in_consensus_cmd() ->
-    [
-     [["info", "in_consensus"], [], [], fun info_in_consensus/3]
-    ].
-
-info_in_consensus_usage() ->
-    [["info", "in_consensus"],
-     ["info in_consensus \n\n",
-      "  Get whether this hf is in the consensus group.\n\n"
-     ]
-    ].
-
-info_in_consensus(["info", "in_consensus"], [], []) ->
-    [clique_status:text(atom_to_list(hf_consensus_mgr:in_consensus()))];
-info_in_consensus([_, _, _], [], []) ->
-    usage.
-
-%%
 %% info name
 %%
 
@@ -134,7 +107,7 @@ info_name_cmd() ->
 info_name_usage() ->
     [["info", "name"],
      ["info name \n\n",
-      "  Get name for this hf.\n\n"
+      "  Get name for this blockchain_follower.\n\n"
      ]
     ].
 
@@ -142,51 +115,4 @@ info_name(["info", "name"], [], []) ->
     {ok, Name} = erl_angry_purple_tiger:animal_name(libp2p_crypto:bin_to_b58(blockchain_swarm:pubkey_bin())),
     [clique_status:text(Name)];
 info_name([_, _, _], [], []) ->
-    usage.
-
-%%
-%% info block_age
-%%
-
-info_block_age_cmd() ->
-    [
-     [["info", "block_age"], [], [], fun info_block_age/3]
-    ].
-
-info_block_age_usage() ->
-    [["info", "block_age"],
-     ["info block_age \n\n",
-      "  Get age of the latest block in the chain, in seconds.\n\n"
-     ]
-    ].
-
-info_block_age(["info", "block_age"], [], []) ->
-    Age = hf:block_age(),
-    [clique_status:text(integer_to_list(Age))];
-info_block_age([_, _, _], [], []) ->
-    usage.
-
-%%
-%% info p2p_status
-%%
-
-info_p2p_status_cmd() ->
-    [
-     [["info", "p2p_status"], [], [], fun info_p2p_status/3]
-    ].
-
-info_p2p_status_usage() ->
-    [["info", "p2p_status"],
-     ["info p2p_status \n\n",
-      "  Returns peer connectivity checks for this hf.\n\n"
-     ]
-    ].
-
-info_p2p_status(["info", "p2p_status"], [], []) ->
-    StatusResults = hf:p2p_status(),
-    FormatResult = fun({Name, Result}) ->
-                           [{name, Name}, {result, Result}]
-                   end,
-    [clique_status:table(lists:map(FormatResult, StatusResults))];
-info_p2p_status([_, _, _], [], []) ->
     usage.

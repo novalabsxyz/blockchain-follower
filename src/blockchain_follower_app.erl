@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc helium-follower public API
+%% @doc blockchain_follower public API
 %% @end
 %%%-------------------------------------------------------------------
 
--module(helium_follower_app).
+-module(blockchain_follower_app).
 
 -behaviour(application).
 
@@ -18,9 +18,9 @@ start(_StartType, _StartArgs) ->
                       BBOpts ++ [{block_cache, Cache}]}],
     application:set_env(rocksdb, global_opts, Opts),
 
-    case hf_sup:start_link() of
+    case bf_sup:start_link() of
         {ok, Pid} ->
-            hf_cli_registry:register_cli(),
+            bf_cli_registry:register_cli(),
             {ok, Pid};
         {error, Reason} -> {error, Reason}
     end.

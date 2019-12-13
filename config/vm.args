@@ -1,6 +1,6 @@
--sname helium-follower
+-sname blockchain_follower
 
--setcookie helium-follower_cookie
+-setcookie blockchain_follower_cookie
 
 +K true
 +A30

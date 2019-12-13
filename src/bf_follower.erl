@@ -1,4 +1,4 @@
--module(hf_follower).
+-module(bf_follower).
 
 -behaviour(gen_server).
 
