@@ -1,13 +1,15 @@
 {application, blockchain_follower,
- [{description, "basic blockchain following application"},
+ [{description, "Callback based blockchain follower application"},
   {vsn, "0.1.0"},
   {registered, []},
   {mod, {blockchain_follower_app, []}},
   {applications,
    [kernel,
     stdlib,
+    syntax_tools,
+    compiler,
     lager,
-    rocksdb
+    clique
    ]},
   {included_applications, [blockchain]},
   {env,[]},
