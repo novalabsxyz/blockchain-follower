@@ -5,11 +5,11 @@
 -callback follower_height(State::any()) -> pos_integer().
 -callback init() -> {ok, State::any()} | {error, term()}.
 -callback load_chain(blockchain:blockchain(), State::any()) -> {ok, NewState::any()}.
--callback load(Hash::binary(),
-               blockchain:block(),
-               Sync::boolean(),
-               blockchain_ledger_v1:ledger(),
-               State::any()) -> {ok, NewState::any()}.
+-callback load_block(Hash::binary(),
+                     blockchain:block(),
+                     Sync::boolean(),
+                     blockchain_ledger_v1:ledger() | undefined,
+                     State::any()) -> {ok, NewState::any()}.
 -callback terminate(State::any()) -> ok.
 
 -optional_callbacks([terminate/1]).
@@ -105,7 +105,7 @@ handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
                                                                  false ->
                                                                      {ok, undefined}
                                                              end,
-                                       FollowerMod:load(MissingHash, MissingBlock, true, MissingLedger, FS)
+                                       FollowerMod:load_block(MissingHash, MissingBlock, true, MissingLedger, FS)
                                end, {ok, State#state.follower_state}, BlockHeights)
            end
         end,
@@ -114,7 +114,7 @@ handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
         {error, already_loaded} ->
             {noreply, State};
         {ok, FollowerState} ->
-            {ok, NewFollowerState} = FollowerMod:load(Hash, Block, Sync, Ledger, FollowerState),
+            {ok, NewFollowerState} = FollowerMod:load_block(Hash, Block, Sync, Ledger, FollowerState),
             {noreply, State#state{follower_state=NewFollowerState}}
     end;
 
