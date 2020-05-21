@@ -1,5 +1,8 @@
 -module(bf_follower).
 
+-callback requires_sync() -> boolean().
+-callback requires_ledger() -> boolean().
+-callback follower_height() -> pos_integer().
 -callback init() -> {ok, State::any()} | {error, term()}.
 -callback load_chain(blockchain:blockchain(), State::any()) -> {ok, NewState::any()}.
 -callback load(Hash::binary(),
@@ -14,63 +17,49 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0,
-         get_height/0, put_height/1,
-         get_cache/1, put_cache/1]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE).
--define(CACHE, bf_cache).
--define(CACHE_HEIGHT, bf_height).
 
 -record(state,
         {
          chain=undefined :: undefined | blockchain:blockchain(),
-         followers :: [{Module::atom(), State::any()}]
+         follower_mod :: atom(),
+         follower_state :: any(),
+         requires_sync :: boolean(),
+         requires_ledger :: boolean()
         }).
 
 %%%===================================================================
 %%% API
 %%%===================================================================
 
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
-
-get_height() ->
-    get_cache(?CACHE_HEIGHT, 2).
-
-put_height(Height) ->
-    put_cache({?CACHE_HEIGHT, Height}).
-
-get_cache(Key) ->
-    ets:lookup(?CACHE, Key).
-
-get_cache(Key, N) ->
-    ets:lookup_element(?CACHE, Key, N).
-
-put_cache(Entry) ->
-    ets:insert(?CACHE, [Entry]).
-
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
 
-init([]) ->
-    ok = register_blockchain_event_handler(self()),
-    ets:new(?CACHE, [public, named_table, {read_concurrency, true}]),
+init(Args) ->
+    {FollowerMod, FollowerArgs} = proplists:get_value(follower_module, Args),
+    FollowerState = FollowerMod:init(FollowerArgs),
+    RequiresSync = FollowerMod:requires_sync(),
+    RequiresLedger = FollowerMod:requires_ledger(),
+    case RequiresSync of
+        true -> blockchain_event:add_sync_handler(self());
+        false -> blockchain_event:add_handler(self())
+    end,
+
     BaseDir = application:get_env(blockchain, base_dir, "data"),
-    FollowerMods = application:get_env(blockchain_follower, follower_modules, []),
-    Followers = lists:map(fun(M) ->
-                                  {ok, S} = M:init(),
-                                  {M, S}
-                            end, FollowerMods),
     blockchain_worker:load(BaseDir, "update"),
 
-    {ok, #state{followers=Followers}}.
+    {ok, #state{follower_mod=FollowerMod, follower_state=FollowerState,
+                requires_sync=RequiresSync, requires_ledger=RequiresLedger}}.
 
 handle_call(_Request, _From, State) ->
     lager:warning("unexpected call ~p from ~p", [_Request, _From]),
@@ -81,81 +70,72 @@ handle_cast(_Msg, State) ->
     lager:warning("unexpected cast ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({blockchain_event, From, {new_chain, Chain}}, State=#state{followers=Followers}) ->
-    Followers = lists:map(fun({M, S}) ->
-                                  {ok, NS} = M:load_chain(Chain, S),
-                                  {M, NS}
-                          end, State#state.followers),
-    acknowledge_blockchain_event(From),
-    {noreply, State#state{chain=Chain, followers=Followers}};
+handle_info({blockchain_event, From, {new_chain, Chain}}, State=#state{follower_mod=FollowerMod}) ->
+    {ok, FollowerState} = FollowerMod:follower_load_chain(Chain, State#state.follower_state),
+    acknowledge_blockchain_event(From, State),
+    {noreply, State#state{chain=Chain, follower_state=FollowerState}};
 
 handle_info({blockchain_event, From, {add_block, Hash, Sync, Ledger}},
-            State=#state{chain=Chain, followers=Followers0}) ->
+            State=#state{chain=Chain, follower_mod=FollowerMod, requires_ledger=RequiresLedger}) ->
 
     {ok, Block} = blockchain:get_block(Hash, Chain),
-    Height = get_height(),
+    Height = FollowerMod:follower_height(),
     BlockHeight = blockchain_block:height(Block),
-    LedgerRequired = application:get_env(blockchain_follower, ledger_required, true),
 
-    Followers1 =
+    FollowerState1 =
         case BlockHeight of
             X when X == Height + 1 ->
                 %% as expected, just continue below
-                Followers0;
+                State#state.follower_state;
         X when X =< Height ->
                 lager:info("ignoring block ~p", [BlockHeight]),
                 %% already have these
-                acknowledge_blockchain_event(From),
+                acknowledge_blockchain_event(From, State),
                 %% throws count as early returns from gen_servers
                 throw({noreply, State});
         X when X > Height + 1 ->
-                MapFollowers =
-                    fun(MissingHeight, FS) ->
-                            {ok, MissingBlock} = blockchain:get_block(MissingHeight, Chain),
-                            MissingHash = blockchain_block:hash_block(MissingBlock),
-                            {ok, MissingLedger} = case LedgerRequired of
-                                                      true ->
-                                                          blockchain:ledger_at(MissingHeight, Chain);
-                                                      false ->
-                                                          {ok, undefined}
-                                                  end,
-                            lists:map(fun({M, S}) ->
-                                              {ok, NS} = M:load(MissingHash, MissingBlock, true, MissingLedger, S),
-                                              {M, NS}
-                                      end, FS)
-                    end,
                 %% missing some blocks, try to obtain them
                 BlockHeights = lists:seq(Height + 1, BlockHeight - 1),
                 lager:info("trying to absorb missing blocks [~p..~p]", [hd(BlockHeights), lists:last(BlockHeights)]),
-                lists:foldl(MapFollowers, Followers0, BlockHeights)
+                lists:foldl(fun(MissingHeight, FS) ->
+                                    {ok, MissingBlock} = blockchain:get_block(MissingHeight, Chain),
+                                    MissingHash = blockchain_block:hash_block(MissingBlock),
+                                    {ok, MissingLedger} = case RequiresLedger of
+                                                              true ->
+                                                                  blockchain:ledger_at(MissingHeight, Chain);
+                                                              false ->
+                                                                  {ok, undefined}
+                                                          end,
+                                    {ok, NewFS} = FollowerMod:load(MissingHash,
+                                                                   MissingBlock,
+                                                                   true,
+                                                                   MissingLedger,
+                                                                   FS),
+                                    NewFS
+                            end, State#state.follower_state, BlockHeights)
         end,
 
-    Followers2 = lists:map(fun({M, S}) ->
-                                   {ok, NS} = M:load(Hash, Block, Sync, Ledger, S),
-                                   {M, NS}
-                           end, Followers1),
+    {ok, FollowersState} =  FollowerMod:load(Hash, Block, Sync, Ledger, FollowerState1),
 
-    acknowledge_blockchain_event(From),
-    {noreply, State#state{followers=Followers2}};
+    acknowledge_blockchain_event(From, State),
+    {noreply, State#state{follower_state=FollowersState}};
 
 handle_info({blockchain_event, From, Other}, State=#state{}) ->
     lager:info("Ignoring blockchain event: ~p", [Other]),
-    acknowledge_blockchain_event(From),
+    acknowledge_blockchain_event(From, State),
     {noreply, State};
 
 handle_info(_Info, State) ->
     lager:warning("unexpected message ~p", [_Info]),
     {noreply, State}.
 
-terminate(Reason, State=#state{}) ->
-    lists:foreach(fun({M, S}) ->
-                          case erlang:function_exported(M, terminate, 2) of
-                              true->
-                                  M:terminate(Reason, S);
-                              false ->
-                                  ok
-                          end
-                   end, State#state.followers).
+terminate(Reason, State=#state{follower_mod=FollowerMod}) ->
+    case erlang:function_exported(FollowerMod, terminate, 2) of
+        true->
+            FollowerMod:terminate(Reason, State#state.follower_state);
+        false ->
+            ok
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -165,16 +145,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal
 %%
 
-register_blockchain_event_handler(Pid) ->
-    case application:get_env(blockchain_follower, sync_mode, false) of
-        true ->
-            blockchain_event:add_sync_handler(Pid);
-        false ->
-            blockchain_event:add_handler(Pid)
-    end.
-
-acknowledge_blockchain_event(From) ->
-    case application:get_env(blockchain_follower, sync_mode, false) of
+acknowledge_blockchain_event(From, State) ->
+    case State#state.requires_sync of
         true ->
             blockchain_event:acknowledge(From);
         false ->
