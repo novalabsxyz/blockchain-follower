@@ -2,7 +2,7 @@
 
 -callback requires_sync() -> boolean().
 -callback requires_ledger() -> boolean().
--callback follower_height() -> pos_integer().
+-callback follower_height(State::any()) -> pos_integer().
 -callback init() -> {ok, State::any()} | {error, term()}.
 -callback load_chain(blockchain:blockchain(), State::any()) -> {ok, NewState::any()}.
 -callback load(Hash::binary(),
@@ -81,7 +81,7 @@ handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
     {ok, Block} = blockchain:get_block(Hash, Chain),
     MaybePlaybackBlocks =
         fun() ->
-           Height = FollowerMod:follower_height(),
+           Height = FollowerMod:follower_height(State#state.follower_state),
            BlockHeight = blockchain_block:height(Block),
            case BlockHeight of
                X when X == Height + 1 ->
