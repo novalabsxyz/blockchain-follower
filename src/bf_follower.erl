@@ -30,7 +30,6 @@
          chain=undefined :: undefined | blockchain:blockchain(),
          follower_mod :: atom(),
          follower_state :: any(),
-         requires_sync :: boolean(),
          requires_ledger :: boolean()
         }).
 
@@ -59,7 +58,7 @@ init(Args) ->
     blockchain_worker:load(BaseDir, "update"),
 
     {ok, #state{follower_mod=FollowerMod, follower_state=FollowerState,
-                requires_sync=RequiresSync, requires_ledger=RequiresLedger}}.
+                requires_ledger=RequiresLedger}}.
 
 handle_call(_Request, _From, State) ->
     lager:warning("unexpected call ~p from ~p", [_Request, _From]),
@@ -70,59 +69,64 @@ handle_cast(_Msg, State) ->
     lager:warning("unexpected cast ~p", [_Msg]),
     {noreply, State}.
 
-handle_info({blockchain_event, From, {new_chain, Chain}}, State=#state{follower_mod=FollowerMod}) ->
+
+handle_info({blockchain_event, From, Event}, State=#state{}) ->
+    %% Received a sync blockchain_event. Dispatch as if async and then
+    %% acknowledge once it returns
+    Result = handle_info({blockchain_event, Event}, State),
+    blockchain_event:acknowledge(From),
+    Result;
+
+handle_info({blockchain_event, {new_chain, Chain}}, State=#state{follower_mod=FollowerMod}) ->
     {ok, FollowerState} = FollowerMod:follower_load_chain(Chain, State#state.follower_state),
-    acknowledge_blockchain_event(From, State),
     {noreply, State#state{chain=Chain, follower_state=FollowerState}};
 
-handle_info({blockchain_event, From, {add_block, Hash, Sync, Ledger}},
-            State=#state{chain=Chain, follower_mod=FollowerMod, requires_ledger=RequiresLedger}) ->
+handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
+            State=#state{chain=Chain, follower_mod=FollowerMod}) ->
 
     {ok, Block} = blockchain:get_block(Hash, Chain),
-    Height = FollowerMod:follower_height(),
-    BlockHeight = blockchain_block:height(Block),
 
-    FollowerState1 =
-        case BlockHeight of
-            X when X == Height + 1 ->
-                %% as expected, just continue below
-                State#state.follower_state;
-        X when X =< Height ->
-                lager:info("ignoring block ~p", [BlockHeight]),
-                %% already have these
-                acknowledge_blockchain_event(From, State),
-                %% throws count as early returns from gen_servers
-                throw({noreply, State});
-        X when X > Height + 1 ->
-                %% missing some blocks, try to obtain them
-                BlockHeights = lists:seq(Height + 1, BlockHeight - 1),
-                lager:info("trying to absorb missing blocks [~p..~p]", [hd(BlockHeights), lists:last(BlockHeights)]),
-                lists:foldl(fun(MissingHeight, FS) ->
-                                    {ok, MissingBlock} = blockchain:get_block(MissingHeight, Chain),
-                                    MissingHash = blockchain_block:hash_block(MissingBlock),
-                                    {ok, MissingLedger} = case RequiresLedger of
-                                                              true ->
-                                                                  blockchain:ledger_at(MissingHeight, Chain);
-                                                              false ->
-                                                                  {ok, undefined}
-                                                          end,
-                                    {ok, NewFS} = FollowerMod:load(MissingHash,
-                                                                   MissingBlock,
-                                                                   true,
-                                                                   MissingLedger,
-                                                                   FS),
-                                    NewFS
-                            end, State#state.follower_state, BlockHeights)
+    MaybePlaybackBlocks =
+        fun() ->
+           Height = FollowerMod:follower_height(),
+           BlockHeight = blockchain_block:height(Block),
+           case BlockHeight of
+               X when X == Height + 1 ->
+                   %% as expected, just continue below
+                   {ok, State#state.follower_state};
+               X when X =< Height ->
+                   lager:info("ignoring block ~p", [BlockHeight]),
+                   %% already have this block
+                   {error, already_loaded};
+               X when X > Height + 1 ->
+                   %% missing some blocks, try to obtain them
+                   BlockHeights = lists:seq(Height + 1, BlockHeight - 1),
+                   RequiresLedger = State#state.requires_ledger,
+                   lager:info("trying to absorb missing blocks [~p..~p]", [hd(BlockHeights), lists:last(BlockHeights)]),
+                   lists:foldl(fun(MissingHeight, {ok, FS}) ->
+                                       {ok, MissingBlock} = blockchain:get_block(MissingHeight, Chain),
+                                       MissingHash = blockchain_block:hash_block(MissingBlock),
+                                       {ok, MissingLedger} = case RequiresLedger of
+                                                                 true ->
+                                                                     blockchain:ledger_at(MissingHeight, Chain);
+                                                                 false ->
+                                                                     {ok, undefined}
+                                                             end,
+                                       FollowerMod:load(MissingHash, MissingBlock, true, MissingLedger, FS)
+                               end, {ok, State#state.follower_state}, BlockHeights)
+           end
         end,
 
-    {ok, FollowersState} =  FollowerMod:load(Hash, Block, Sync, Ledger, FollowerState1),
+    case MaybePlaybackBlocks() of
+        {error, already_loaded} ->
+            {noreply, State};
+        {ok, FollowerState} ->
+            {ok, NewFollowerState} = FollowerMod:load(Hash, Block, Sync, Ledger, FollowerState),
+            {noreply, State#state{follower_state=NewFollowerState}}
+    end;
 
-    acknowledge_blockchain_event(From, State),
-    {noreply, State#state{follower_state=FollowersState}};
-
-handle_info({blockchain_event, From, Other}, State=#state{}) ->
+handle_info({blockchain_event, Other}, State=#state{}) ->
     lager:info("Ignoring blockchain event: ~p", [Other]),
-    acknowledge_blockchain_event(From, State),
     {noreply, State};
 
 handle_info(_Info, State) ->
@@ -139,16 +143,3 @@ terminate(Reason, State=#state{follower_mod=FollowerMod}) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-
-
-%%
-%% Internal
-%%
-
-acknowledge_blockchain_event(From, State) ->
-    case State#state.requires_sync of
-        true ->
-            blockchain_event:acknowledge(From);
-        false ->
-            ok
-    end.
