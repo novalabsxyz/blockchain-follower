@@ -29,8 +29,7 @@
         {
          chain=undefined :: undefined | blockchain:blockchain(),
          follower_mod :: atom(),
-         follower_state :: any(),
-         requires_ledger :: boolean()
+         follower_state :: any()
         }).
 
 %%%===================================================================
@@ -45,30 +44,26 @@ start_link(Args) ->
 %%%===================================================================
 
 init(Args) ->
+    %% Init the follower module
     {FollowerMod, FollowerArgs} = proplists:get_value(follower_module, Args),
     FollowerState = FollowerMod:init(FollowerArgs),
-    RequiresSync = FollowerMod:requires_sync(),
-    RequiresLedger = FollowerMod:requires_ledger(),
-    case RequiresSync of
+    %% Register a sync/async blockchain_event handler
+    case FollowerMod:requires_sync() of
         true -> blockchain_event:add_sync_handler(self());
         false -> blockchain_event:add_handler(self())
     end,
-
+    %% Now load the chain
     BaseDir = application:get_env(blockchain, base_dir, "data"),
     blockchain_worker:load(BaseDir, "update"),
-
-    {ok, #state{follower_mod=FollowerMod, follower_state=FollowerState,
-                requires_ledger=RequiresLedger}}.
+    {ok, #state{follower_mod=FollowerMod, follower_state=FollowerState}}.
 
 handle_call(_Request, _From, State) ->
     lager:warning("unexpected call ~p from ~p", [_Request, _From]),
-    Reply = ok,
-    {reply, Reply, State}.
+    {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     lager:warning("unexpected cast ~p", [_Msg]),
     {noreply, State}.
-
 
 handle_info({blockchain_event, From, Event}, State=#state{}) ->
     %% Received a sync blockchain_event. Dispatch as if async and then
@@ -78,14 +73,12 @@ handle_info({blockchain_event, From, Event}, State=#state{}) ->
     Result;
 
 handle_info({blockchain_event, {new_chain, Chain}}, State=#state{follower_mod=FollowerMod}) ->
-    {ok, FollowerState} = FollowerMod:follower_load_chain(Chain, State#state.follower_state),
+    {ok, FollowerState} = FollowerMod:load_chain(Chain, State#state.follower_state),
     {noreply, State#state{chain=Chain, follower_state=FollowerState}};
 
 handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
             State=#state{chain=Chain, follower_mod=FollowerMod}) ->
-
     {ok, Block} = blockchain:get_block(Hash, Chain),
-
     MaybePlaybackBlocks =
         fun() ->
            Height = FollowerMod:follower_height(),
@@ -101,7 +94,7 @@ handle_info({blockchain_event, {add_block, Hash, Sync, Ledger}},
                X when X > Height + 1 ->
                    %% missing some blocks, try to obtain them
                    BlockHeights = lists:seq(Height + 1, BlockHeight - 1),
-                   RequiresLedger = State#state.requires_ledger,
+                   RequiresLedger = FollowerMod:requires_ledger(),
                    lager:info("trying to absorb missing blocks [~p..~p]", [hd(BlockHeights), lists:last(BlockHeights)]),
                    lists:foldl(fun(MissingHeight, {ok, FS}) ->
                                        {ok, MissingBlock} = blockchain:get_block(MissingHeight, Chain),
